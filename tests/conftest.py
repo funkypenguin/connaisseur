@@ -1,6 +1,7 @@
 import os
 import re
 import json
+from connaisseur.keys import Key
 import pytest
 import requests
 from aioresponses import CallbackResult
@@ -269,7 +270,7 @@ def m_expiry(monkeypatch):
 
 @pytest.fixture
 def sample_key_store(m_trust_data):
-    sample_key = (
+    sample_key = Key(
         "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtR5kwrDK22SyCu"
         "7WMF8tCjVgeORAS2PWacRcBN/VQdVK4PVk1w4pMWlz9AHQthDG"
         "l+W2k3elHkPbR+gNkK2PCA=="
@@ -282,7 +283,7 @@ def sample_key_store(m_trust_data):
 
 @pytest.fixture
 def alice_key_store(m_trust_data):
-    sample_key = (
+    sample_key = Key(
         "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEtR5kwrD"
         "K22SyCu7WMF8tCjVgeORAS2PWacRcBN/VQdVK4PVk1"
         "w4pMWlz9AHQthDGl+W2k3elHkPbR+gNkK2PCA=="

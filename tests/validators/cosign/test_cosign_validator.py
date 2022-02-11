@@ -1,7 +1,9 @@
+from connaisseur.keys import Key
 import pytest
 import pytest_subprocess
 import subprocess
 from ... import conftest as fix
+from connaisseur.image import Image
 import connaisseur.validators.cosign.cosign_validator as co
 import connaisseur.exceptions as exc
 
@@ -10,6 +12,11 @@ example_key = (
     "ZhEfTYb4Mnb/LdrtXKTIIbzNBp8mwriocbaxXxzqu"
     "vbZpv4QtOTPoIw+0192MW9dWlSVaQPJd7IaiZIIQ=="
 )
+example_key2 = (
+    "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEOXYta5TgdCwXTCnLU09W5T4M4r9f"
+    "QQrqJuADP6U7g5r9ICgPSmZuRHP/1AYUfOQW3baveKsT969EfELKj1lfCA=="
+)
+
 static_cosigns = [
     {
         "name": "cosign1",
@@ -19,7 +26,7 @@ static_cosigns = [
                 "name": "default",
                 "key": example_key,
             },
-            {"name": "test", "key": "..."},
+            {"name": "test", "key": example_key2},
         ],
     },
     {
@@ -72,11 +79,11 @@ The following checks were performed on each of these signatures:
 
 
 @pytest.fixture()
-def mock_invoke_cosign(mocker, status_code, stdout, stderr):
+def mock_cosign_callback(mocker, status_code, stdout, stderr):
     mocker.patch(
         (
             "connaisseur.validators.cosign.cosign_validator."
-            "CosignValidator._CosignValidator__invoke_cosign"
+            "CosignValidator._CosignValidator__cosign_callback"
         ),
         return_value=(status_code, stdout, stderr),
     )
@@ -103,8 +110,8 @@ def test_init(index: int, kchain: bool):
 @pytest.mark.parametrize(
     "index, key_name, key, exception",
     [
-        (0, "test", "...", fix.no_exc()),
         (0, None, example_key, fix.no_exc()),
+        (0, "test", example_key2, fix.no_exc()),
         (
             0,
             "non_existing",
@@ -122,7 +129,7 @@ def test_init(index: int, kchain: bool):
 def test_get_key(index: int, key_name: str, key: str, exception):
     with exception:
         val = co.CosignValidator(**static_cosigns[index])
-        assert val._CosignValidator__get_key(key_name) == key
+        assert str(val._CosignValidator__get_key(key_name)) == key
 
 
 @pytest.mark.asyncio
@@ -145,7 +152,9 @@ def test_get_key(index: int, key_name: str, key: str, exception):
         ),
     ],
 )
-async def test_validate(mock_invoke_cosign, status_code, stdout, stderr, image, digest):
+async def test_validate(
+    mock_cosign_callback, status_code, stdout, stderr, image, digest
+):
     assert await co.CosignValidator(**static_cosigns[0]).validate(image) == digest
 
 
@@ -172,7 +181,7 @@ async def test_validate(mock_invoke_cosign, status_code, stdout, stderr, image, 
             0,
             cosign_multiline_payload,
             cosign_stderr_at_success,
-            "",
+            "testimage:v1",
             [
                 "2f6d89c49ad745bfd5d997f9b2d253329323da4c500c7fe343e068c0382b8df4",
                 "2f6d89c49ad745bfd5d997f9b2d253329323da4c500c7fe343e068c0382b8df4",
@@ -230,11 +239,13 @@ async def test_validate(mock_invoke_cosign, status_code, stdout, stderr, image, 
     ],
 )
 def test_get_cosign_validated_digests(
-    mock_invoke_cosign, status_code, stdout, stderr, image, output, exception
+    mock_cosign_callback, status_code, stdout, stderr, image, output, exception
 ):
     with exception:
         val = co.CosignValidator(**static_cosigns[0])
-        digests = val._CosignValidator__get_cosign_validated_digests(image, "sth")
+        digests = val._CosignValidator__get_cosign_validated_digests(
+            Image(image), Key(example_key)
+        )
         assert digests == output
 
 
@@ -243,20 +254,23 @@ def test_get_cosign_validated_digests(
     [
         (
             "testimage:v1",
-            (
-                "-----BEGIN PUBLIC KEY-----\n"
-                "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6uuXbZhEfTYb4Mnb/LdrtXKTIIbz\n"
-                "NBp8mwriocbaxXxzquvbZpv4QtOTPoIw+0192MW9dWlSVaQPJd7IaiZIIQ==\n"
-                "-----END PUBLIC KEY-----\n"
-            ),
+            [
+                "--key",
+                "/dev/stdin",
+                (
+                    b"-----BEGIN PUBLIC KEY-----\n"
+                    b"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6uuXbZhEfTYb4Mnb/LdrtXKTIIbz\n"
+                    b"NBp8mwriocbaxXxzquvbZpv4QtOTPoIw+0192MW9dWlSVaQPJd7IaiZIIQ==\n"
+                    b"-----END PUBLIC KEY-----\n"
+                ),
+            ],
             "key",
             {"secret_name": "thesecret"},
         ),
-        ("testimage:v1", "k8s://connaisseur/test_key", "ref", False),
-        ("testimage:v1", "k8s://connaisseur/test_key", "ref", True),
+        ("testimage:v1", ["--key", "k8s://connaisseur/test_key", b""], "ref", False),
     ],
 )
-def test_invoke_cosign(fake_process, image, process_input, input_type, k8s_keychain):
+def test_cosign_callback(fake_process, image, process_input, input_type, k8s_keychain):
     def stdin_function(input):
         return {"stderr": input.decode(), "stdout": input}
 
@@ -265,15 +279,16 @@ def test_invoke_cosign(fake_process, image, process_input, input_type, k8s_keych
     # https://pytest-subprocess.readthedocs.io/en/latest/usage.html#passing-input
     # It seems there is a bug that, when appending the input to a data stream (e.g. stderr),
     # eats the other data stream (stdout in that case). Thus, simply appending to both.
+    im = Image(image)
     fake_process_calls = [
         "/app/cosign/cosign",
         "verify",
         "--output",
         "text",
-        "--key",
-        "/dev/stdin" if input_type == "key" else process_input,
+        process_input[0],
+        process_input[1],
         *(["--k8s-keychain"] if k8s_keychain else []),
-        image,
+        str(im),
     ]
     fake_process.register_subprocess(
         fake_process_calls,
@@ -284,16 +299,14 @@ def test_invoke_cosign(fake_process, image, process_input, input_type, k8s_keych
     config = static_cosigns[0].copy()
     config["auth"] = {"k8s_keychain": k8s_keychain}
     val = co.CosignValidator(**config)
-    returncode, stdout, stderr = val._CosignValidator__invoke_cosign(
-        "testimage:v1", process_input
+    returncode, stdout, stderr = val._CosignValidator__cosign_callback(
+        im, process_input
     )
     assert fake_process_calls in fake_process.calls
     assert (returncode, stdout, stderr) == (
         0,
-        "{}{}".format(cosign_payload, process_input if input_type == "key" else ""),
-        "{}{}".format(
-            cosign_stderr_at_success, process_input if input_type == "key" else ""
-        ),
+        "{}{}".format(cosign_payload, process_input[2].decode()),
+        "{}{}".format(cosign_stderr_at_success, process_input[2].decode()),
     )
 
 
@@ -303,7 +316,7 @@ def test_invoke_cosign(fake_process, image, process_input, input_type, k8s_keych
         "testimage:v1",
     ],
 )
-def test_invoke_cosign_timeout_expired(
+def test_cosign_callback_timeout_expired(
     mocker, mock_add_kill_fake_process, fake_process, image
 ):
     def callback_function(input):
@@ -327,49 +340,18 @@ def test_invoke_cosign_timeout_expired(
     mock_kill = mocker.patch("pytest_subprocess.fake_popen.FakePopen.kill")
 
     with pytest.raises(exc.CosignTimeout) as err:
-
-        co.CosignValidator(**static_cosigns[0])._CosignValidator__invoke_cosign(
-            image, example_pubkey
+        co.CosignValidator(**static_cosigns[0])._CosignValidator__cosign_callback(
+            image, ["--key", "/dev/stdin", example_pubkey]
         )
 
     mock_kill.assert_has_calls([mocker.call()])
     assert "Cosign timed out." in str(err.value)
 
 
-@pytest.mark.parametrize(
-    "pubkey, output, exception",
-    [
-        (
-            (
-                "-----BEGIN PUBLIC KEY-----\n"
-                "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6uuXbZhEfTYb4Mnb/LdrtXKTIIbz\n"
-                "NBp8mwriocbaxXxzquvbZpv4QtOTPoIw+0192MW9dWlSVaQPJd7IaiZIIQ==\n"
-                "-----END PUBLIC KEY-----\n"
-            ),
-            (
-                ["--key", "/dev/stdin"],
-                {},
-                b"-----BEGIN PUBLIC KEY-----\nMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6uuXbZhEfTYb4Mnb/LdrtXKTIIbz\nNBp8mwriocbaxXxzquvbZpv4QtOTPoIw+0192MW9dWlSVaQPJd7IaiZIIQ==\n-----END PUBLIC KEY-----\n",
-            ),
-            fix.no_exc(),
-        ),
-        (
-            "k8s://connaisseur/test_key",
-            (["--key", "k8s://connaisseur/test_key"], {}, b""),
-            fix.no_exc(),
-        ),
-        (
-            "123step123step",
-            ([], {}, b""),
-            pytest.raises(exc.InvalidFormatException, match=r".*Public key.*"),
-        ),
-    ],
-)
-def test_get_pubkey_config(pubkey, output, exception):
-    with exception:
-        assert (
-            co.CosignValidator(**static_cosigns[0])._CosignValidator__get_pubkey_config(
-                pubkey
-            )
-            == output
-        )
+def test_get_envs(monkeypatch):
+    env = co.CosignValidator(**static_cosigns[0])._CosignValidator__get_envs()
+    assert env["DOCKER_CONFIG"] == "/app/connaisseur-config/cosign1/.docker/"
+
+
+def test_healthy():
+    co.CosignValidator(**static_cosigns[0]).healthy == True

@@ -7,7 +7,6 @@ from datetime import datetime
 import pytz
 from dateutil import parser
 
-from connaisseur.crypto import verify_signature
 from connaisseur.exceptions import (
     InvalidTrustDataFormatError,
     NoSuchClassError,
@@ -93,7 +92,7 @@ class TrustData:
             sig = signature["sig"]
 
             try:
-                verify_signature(pub_key, sig, msg)
+                pub_key.verify(signature=sig, payload=msg, validator_type="notaryv1")
             except Exception as err:
                 msg = "Failed to verify signature of trust data {trust_data_kind}."
                 raise ValidationError(message=msg, trust_data_kind=self.kind) from err

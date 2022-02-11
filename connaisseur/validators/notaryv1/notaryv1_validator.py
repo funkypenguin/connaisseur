@@ -9,6 +9,7 @@ from connaisseur.exceptions import (
     NotFoundException,
 )
 from connaisseur.image import Image
+from connaisseur.keys import Key
 from connaisseur.validators.interface import ValidatorInterface
 from connaisseur.validators.notaryv1.key_store import KeyStore
 from connaisseur.validators.notaryv1.notary import Notary
@@ -34,7 +35,7 @@ class NotaryV1Validator(ValidatorInterface):
         if delegations is None:
             delegations = []
         # get the public root key
-        pub_key = self.notary.get_key(trust_root)
+        pub_key = Key(self.notary.get_key(trust_root))
         # prepend `targets/` to the required delegation roles, if not already present
         req_delegations = list(
             map(NotaryV1Validator.__normalize_delegation, delegations)
@@ -92,7 +93,7 @@ class NotaryV1Validator(ValidatorInterface):
         return delegation_role
 
     async def __process_chain_of_trust(
-        self, image: Image, req_delegations: list, pub_root_key: str
+        self, image: Image, req_delegations: list, pub_root_key: Key
     ):  # pylint: disable=too-many-branches
         """
         Process the whole chain of trust, provided by the notary

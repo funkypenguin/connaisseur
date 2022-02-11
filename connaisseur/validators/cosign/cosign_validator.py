@@ -4,7 +4,6 @@ import os
 import re
 import subprocess  # nosec
 
-from connaisseur.crypto import load_key
 from connaisseur.exceptions import (
     CosignError,
     CosignTimeout,
@@ -14,6 +13,7 @@ from connaisseur.exceptions import (
     ValidationError,
 )
 from connaisseur.image import Image
+from connaisseur.keys import Key
 from connaisseur.util import safe_path_func  # nosec
 from connaisseur.validators.interface import ValidatorInterface
 
@@ -39,21 +39,23 @@ class CosignValidator(ValidatorInterface):
             raise NotFoundException(
                 message=msg, key_name=key_name, validator_name=self.name
             ) from err
-        return "".join(key)
+        return Key("".join(key))
 
     async def validate(
         self, image: Image, trust_root: str = None, **kwargs
     ):  # pylint: disable=arguments-differ
         key = self.__get_key(trust_root)
-        return self.__get_cosign_validated_digests(str(image), key).pop()
+        return self.__get_cosign_validated_digests(image, key).pop()
 
-    def __get_cosign_validated_digests(self, image: str, key: str):
+    def __get_cosign_validated_digests(self, image: Image, key: Key):
         """
         Get and process Cosign validation output for a given `image` and `key`
         and either return a list of valid digests or raise a suitable exception
         in case no valid signature is found or Cosign fails.
         """
-        returncode, stdout, stderr = self.__invoke_cosign(image, key)
+        returncode, stdout, stderr = key.verify(
+            validator_type="cosign", cosign_callback=self.__cosign_callback, image=image
+        )
         logging.info(
             "COSIGN output for image: %s; RETURNCODE: %s; STDOUT: %s; STDERR: %s",
             image,
@@ -117,41 +119,33 @@ class CosignValidator(ValidatorInterface):
             raise UnexpectedCosignData(message=msg)
         return digests
 
-    def __invoke_cosign(self, image, key):
+    def __cosign_callback(self, image: Image, key_args: list):
         """
-        Invoke the Cosign binary in a subprocess for a specific `image` given a `key` and
-        return the returncode, stdout and stderr. Will raise an exception if Cosign times out.
+        Callback function that is passed on to any `key.verify()` that is using a cosign
+        validator. Invokes the actual cosign command with different arguments, depending
+        on specific key at hand.
         """
-        pubkey_config, env_vars, pubkey = CosignValidator.__get_pubkey_config(key)
-
-        env = os.environ.copy()
-        # Extend the OS env vars only for passing to the subprocess below
-        env["DOCKER_CONFIG"] = f"/app/connaisseur-config/{self.name}/.docker/"
-        if safe_path_func(
-            os.path.exists, "/app/certs/cosign", f"/app/certs/cosign/{self.name}.crt"
-        ):
-            env["SSL_CERT_FILE"] = f"/app/certs/cosign/{self.name}.crt"
-        env.update(env_vars)
-
+        option_kword, inline_key, key = key_args
         cmd = [
             "/app/cosign/cosign",
             "verify",
             "--output",
             "text",
-            *pubkey_config,
+            option_kword,
+            inline_key,
             *(["--k8s-keychain"] if self.k8s_keychain else []),
-            image,
+            str(image),
         ]
 
         with subprocess.Popen(  # nosec
             cmd,
-            env=env,
+            env=self.__get_envs(),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         ) as process:
             try:
-                stdout, stderr = process.communicate(pubkey, timeout=60)
+                stdout, stderr = process.communicate(key, timeout=60)
             except subprocess.TimeoutExpired as err:
                 process.kill()
                 msg = "Cosign timed out."
@@ -161,29 +155,19 @@ class CosignValidator(ValidatorInterface):
 
         return process.returncode, stdout.decode("utf-8"), stderr.decode("utf-8")
 
-    @staticmethod
-    def __get_pubkey_config(key: str):
+    def __get_envs(self):
         """
-        Return a tuple of the used Cosign verification command (flag-value list), a
-        dict of potentially required environment variables and public key in binary
-        PEM format to be used as stdin to Cosign based on the format of the input
-        key (reference).
-
-        Raise InvalidFormatException if none of the supported patterns is matched.
+        Sets up environment variables used by cosign for potential authentication or TLS
+        verification against private registries.
         """
-        try:
-            # key is ecdsa public key
-            pkey = load_key(key).to_pem()  # raises if invalid
-            return ["--key", "/dev/stdin"], {}, pkey
-        except ValueError:
-            pass
-
-        # key is KMS reference
-        if re.match(r"^\w{2,20}://[\w:/-]{3,255}$", key):
-            return ["--key", key], {}, b""
-
-        msg = "Public key (reference) '{input_str}' does not match expected patterns."
-        raise InvalidFormatException(message=msg, input_str=key)
+        env = os.environ.copy()
+        # Extend the OS env vars only for passing to the subprocess below
+        env["DOCKER_CONFIG"] = f"/app/connaisseur-config/{self.name}/.docker/"
+        if safe_path_func(
+            os.path.exists, "/app/certs/cosign", f"/app/certs/cosign/{self.name}.crt"
+        ):
+            env["SSL_CERT_FILE"] = f"/app/certs/cosign/{self.name}.crt"
+        return env
 
     @property
     def healthy(self):
