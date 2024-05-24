@@ -1,4 +1,4 @@
-FROM golang:1.21-alpine AS build
+FROM golang:1.22-alpine AS build
 
 WORKDIR /go/src
 
@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/root/.cache/go-build \
     go build -o /go/bin ./cmd/connaisseur
 
 FROM alpine:3 as certs
-RUN apk --update --no-cache add ca-certificates=20230506-r0
+RUN apk --update --no-cache add ca-certificates=20240226-r0
 
 FROM scratch
 

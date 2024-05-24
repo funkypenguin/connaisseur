@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -236,7 +235,12 @@ func ValidateImage(ctx context.Context, in ValidationInput, out chan<- Validatio
 	// cache digest or error
 	if cacheErr != "" || img.Digest() != "" {
 		if cacheErr != "" {
-			img.SetDigest("") // delete digest for clearer caching entries
+			// don't cache errors, if so configured
+			if !caching.CacheErrors() {
+				return
+			}
+			// otherwise, delete digest for clearer caching entries
+			img.SetDigest("")
 		}
 
 		err = cache.Set(
@@ -247,7 +251,6 @@ func ValidateImage(ctx context.Context, in ValidationInput, out chan<- Validatio
 				utils.JsonEscapeString(img.Digest()),
 				utils.JsonEscapeString(cacheErr),
 			),
-			constants.CacheExpirySeconds*time.Second,
 		)
 		if err != nil {
 			logrus.Warnf("error caching digest: %v", err)

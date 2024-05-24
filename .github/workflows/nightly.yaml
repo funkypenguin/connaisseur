@@ -27,6 +27,7 @@ jobs:
       pull-requests: read
       repository-projects: read
       statuses: read
+      attestations: read
     secrets: inherit
     with:
       skip_build: "none"
@@ -40,5 +41,5 @@ jobs:
 
   cleanup-registry:
     uses: ./.github/workflows/.reusable-cleanup-registry.yml
-    needs: [build]
+    needs: [ci]
     secrets: inherit

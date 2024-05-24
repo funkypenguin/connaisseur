@@ -22,6 +22,9 @@ const (
 	DockerAuthFile             = ".dockerconfigjson"
 	DefaultDockerRegistry      = "index.docker.io"
 	DefaultRedisPort           = 6379
+	DefaultCacheExpirySeconds  = 30
+	CacheExpirySecondsKey      = "CACHE_EXPIRY_SECONDS"
+	CacheErrorsKey             = "CACHE_ERRORS"
 	EmptyAuthRegistry          = "EMPTYAUTH"
 )
 
@@ -40,7 +43,6 @@ const (
 const (
 	// Timeouts
 	HTTPTimeoutSeconds         = 30
-	CacheExpirySeconds         = 30
 	ValidationTimeoutSeconds   = 29 // Keep below 30 such that we can respond before k8s API times out request to Connaisseur
 	TLSHandshakeTimeoutSeconds = 10
 )
