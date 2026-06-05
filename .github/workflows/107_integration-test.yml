@@ -53,9 +53,11 @@ jobs:
             "other-ns",
           ]
     steps:
-      - name: Checkout code
+      - &checkout
+        name: Checkout code
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Login with registry
+      - &login
+        name: Login with registry
         uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
         with:
           registry: ${{ inputs.build_registry }}
@@ -102,14 +104,8 @@ jobs:
         ports:
           - 56243:56243
     steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Login with registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ${{ inputs.build_registry }}
-          username: ${{ inputs.repo_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - *checkout
+      - *login
       - uses: ./.github/actions/integration-setup
         name: Integration test setup
         id: setup
@@ -144,14 +140,8 @@ jobs:
             "v1.35",
           ]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Login with registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ${{ inputs.build_registry }}
-          username: ${{ inputs.repo_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - *checkout
+      - *login
       - uses: ./.github/actions/integration-setup
         name: Integration test setup
         id: setup
@@ -187,14 +177,8 @@ jobs:
             "v1.32",
           ]
     steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Login with registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ${{ inputs.build_registry }}
-          username: ${{ inputs.repo_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - *checkout
+      - *login
       - uses: ./.github/actions/integration-setup
         name: Integration test setup
         id: setup
@@ -224,14 +208,8 @@ jobs:
     strategy:
       fail-fast: false
     steps:
-      - name: Checkout code
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Login with registry
-        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4.2.0
-        with:
-          registry: ${{ inputs.build_registry }}
-          username: ${{ inputs.repo_owner }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - *checkout
+      - *login
       - uses: ./.github/actions/integration-setup
         name: Integration test setup
         id: setup
